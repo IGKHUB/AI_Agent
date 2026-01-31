@@ -22,12 +22,13 @@ messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)]
     #contents=messages,
     #config=types.GenerateContentConfig(system_instruction=system_prompt,tools=[available_functions],#temperature=0),)
 
-
+usage_metadata = response.usage_metadata
+function_calls = response.function_calls
 function_results = []
 
 
 def main():
-    for iteration in range(20):
+    for i in range(20):
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=messages,
@@ -36,66 +37,44 @@ def main():
                 tools=[available_functions],
                 temperature=0,
             ),
-        )
-        usage_metadata = response.usage_metadata        
+        )        
         if usage_metadata is None:
             raise RuntimeError("failed API request")
         
         if args.verbose:
-            print(f"\n--- Iteration {iteration + 1} ---")
-            print(f"Prompt tokens: {response.usage_metadata.prompt_token_count}")
-            print(f"Response tokens: {response.usage_metadata.candidates_token_count}")
-
-        # 1. Add all candidates to conversation history
-        if not response.candidates:
-            raise RuntimeError("No candidates returned from model")
-
-        for candidate in response.candidates:
-            messages.append(candidate.content)
-
-        # 2. Handle function calls
-        function_calls = response.function_calls
-        function_results = []
-
+            print("Hello from ai-agent!")
+            print(f"User prompt: {args.user_prompt}")
+            print(f"Prompt tokens: {usage_metadata.prompt_token_count}")
+            print(f"Response tokens: {usage_metadata.candidates_token_count}")
+            print(f"Response:\n{response.text}")
+            
         if function_calls:
             for function_call in function_calls:
-                function_call_result = call_function(
-                    function_call,
-                    verbose=args.verbose,
-                )
+                function_call_result = call_function(function_call, verbose=args.verbose)
 
+                # 1. parts must exist and be non-empty
                 if not function_call_result.parts:
                     raise RuntimeError("Function call returned no parts")
 
                 part = function_call_result.parts[0]
 
+                # 2. function_response must exist
                 if part.function_response is None:
                     raise RuntimeError("Missing function_response")
 
+                # 3. response must exist
                 if part.function_response.response is None:
                     raise RuntimeError("Function response was None")
 
+                # 4. store result
                 function_results.append(part)
 
+                # 5. verbose output
                 if args.verbose:
-                    print(f"-> Function result: {part.function_response.response}")
-
-            # 3. Append function results so the model can see them
-            messages.append(
-                types.Content(
-                    role="user",
-                    parts=function_results,
-                )
-            )
-
-        else:
-            # 4. Final response — no more function calls
-            print(response.text)
-            return
-
-    # 5. Loop exhausted
-    print("ERROR: Maximum iterations reached without a final response.")
-    exit(1)        
+                    print(f"-> {part.function_response.response}")
+            else:
+                print(f"Response:\n{response.text}")
+    
 
 
 if __name__ == "__main__":
